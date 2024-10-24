@@ -14,7 +14,7 @@ boneage_threshold = 100
 train_images, train_labels = load_images_from_csv(
     'data/boneage-training-dataset.csv', 
     'data/boneage-training-dataset/boneage-training-dataset', 
-    threshold=boneage_threshold, limit=5000
+    threshold=boneage_threshold, limit=6000
 )
 
 # define the CNN model
@@ -42,31 +42,32 @@ def create_model(input_shape):
     model.add(BatchNormalization())
     model.add(LeakyReLU(alpha=0.1))
 
-    # Fifth convolutional block + MaxPooling
+    # Fifth convolutional block + MaxPooling - making this last for now
     model.add(Conv2D(512, kernel_size=(3, 3)))
     model.add(BatchNormalization())
+    # model.add(LeakyReLU(alpha=0.1))
+    #model.add(MaxPooling2D(pool_size=(2, 2)))
     model.add(LeakyReLU(alpha=0.1))
-    model.add(MaxPooling2D(pool_size=(2, 2)))
 
     # Last block: no max pooling, more filters
-    model.add(Conv2D(1024, kernel_size=(3, 3)))
-    model.add(BatchNormalization())
-    model.add(LeakyReLU(alpha=0.1))
+    # model.add(Conv2D(1024, kernel_size=(3, 3)))
+    # model.add(BatchNormalization())
+    # model.add(LeakyReLU(alpha=0.1))
 
     # Global Average Pooling instead of Flatten
     model.add(GlobalAveragePooling2D())
 
     # Fully connected layers with regularization and reduced Dropout
-    model.add(Dense(128, activation='relu'))
-    model.add(Dropout(0.2))  # Reduced dropout
-    model.add(Dense(64, activation='relu'))
-    model.add(Dropout(0.2))  # Reduced dropout
+    model.add(Dense(128, activation='relu', kernel_regularizer=l2(0.001)))
+    model.add(Dropout(0.5))
+    model.add(Dense(64, activation='relu', kernel_regularizer=l2(0.001)))
+    model.add(Dropout(0.5))
 
     # Output layer for binary classification
     model.add(Dense(1, activation='sigmoid'))
 
     # Optimizer with slightly increased learning rate
-    optimizer = Adam(learning_rate=0.001)
+    optimizer = Adam(learning_rate=0.0005, decay = .00001)
     model.compile(optimizer=optimizer, loss='binary_crossentropy', metrics=['accuracy'])
 
     return model
@@ -96,7 +97,7 @@ model = create_model(input_shape)
 model.summary()
 
 # add early stopping to prevent overfitting
-early_stopping = EarlyStopping(monitor='val_loss', patience=3, restore_best_weights=True)
+early_stopping = EarlyStopping(monitor='val_loss', patience=5, restore_best_weights=True)
 
 # train the model
-model.fit(train_images, train_labels, epochs=10, batch_size=32, validation_split=0.2)
+model.fit(train_images, train_labels, epochs=30, batch_size=32, validation_split=0.2, callbacks=[early_stopping])

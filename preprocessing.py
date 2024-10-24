@@ -20,12 +20,12 @@ def normalize_image(image):
 # augmenting (important) and converting the image to a tensor for TensorFlow
 def augment_image(image):
     datagen = ImageDataGenerator(
-        rotation_range=180,
-        width_shift_range=0.2,
-        height_shift_range=0.2,
-        brightness_range=[0.2,0.5],
-        zoom_range=0.25,
-        fill_mode='nearest',
+        rotation_range=15,
+        width_shift_range=0.1,
+        height_shift_range=0.1,
+        #brightness_range=[0.2,0.5],
+        zoom_range=0.1,
+        #fill_mode='nearest',
         horizontal_flip=True
     )
 
