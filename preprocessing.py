@@ -20,6 +20,7 @@ def normalize_image(image):
 # augmenting (important) and converting the image to a tensor for TensorFlow
 def augment_image(image):
     datagen = ImageDataGenerator(
+        rotation_range=180,
         width_shift_range=0.2,
         height_shift_range=0.2,
         brightness_range=[0.2,0.5],
@@ -31,10 +32,10 @@ def augment_image(image):
     # convert PIL image to np array and add batch dimension
     image_array = np.array(image)
 
-    # add channel dimension
+    # add channel dimension (grayscale)
     image_array = np.expand_dims(image_array, axis=-1)
 
-    # add batch dimension
+    # add batch dimension (required by datagen)
     image_array = np.expand_dims(image_array, axis=0)
 
     # generate augmented image
@@ -43,11 +44,10 @@ def augment_image(image):
     # return to 2d
     augmented_image = augmented_image.squeeze()
 
-    return Image.fromarray((augmented_image * 255).astype(np.uint8))
+    # normalize pixel values [0, 1] range
+    augmented_image = augmented_image / 255.0
 
-# convert the image to grayscale
-def convert_to_grayscale(image):
-    return ImageOps.grayscale(image)
+    return augmented_image
 
 # finally, convert the image to a TensorFlow tensor
 def convert_to_tensor(image):
@@ -58,7 +58,6 @@ def preprocess_image(image):
     image = load_image(image)
     image = resize_image(image)
     image = augment_image(image)
-    image = convert_to_grayscale(image)
     image = normalize_image(image)
     image = convert_to_tensor(image)
     return image
