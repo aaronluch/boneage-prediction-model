@@ -8,13 +8,13 @@ from tensorflow.keras.optimizers import Adam
 from matplotlib import pyplot as plt
 from loading import load_images_from_csv
 
-boneage_threshold = 5000
+boneage_threshold = 100
 
 # load the training images and labels (set a limit for testing purposes)
 train_images, train_labels = load_images_from_csv(
     'data/boneage-training-dataset.csv', 
     'data/boneage-training-dataset/boneage-training-dataset', 
-    threshold=boneage_threshold, limit=500
+    threshold=boneage_threshold, limit=5000
 )
 
 # define the CNN model
@@ -42,14 +42,25 @@ def create_model(input_shape):
     model.add(BatchNormalization())
     model.add(LeakyReLU(alpha=0.1))
 
+    # Fifth convolutional block + MaxPooling
+    model.add(Conv2D(512, kernel_size=(3, 3)))
+    model.add(BatchNormalization())
+    model.add(LeakyReLU(alpha=0.1))
+    model.add(MaxPooling2D(pool_size=(2, 2)))
+
+    # Last block: no max pooling, more filters
+    model.add(Conv2D(1024, kernel_size=(3, 3)))
+    model.add(BatchNormalization())
+    model.add(LeakyReLU(alpha=0.1))
+
     # Global Average Pooling instead of Flatten
     model.add(GlobalAveragePooling2D())
 
     # Fully connected layers with regularization and reduced Dropout
     model.add(Dense(128, activation='relu'))
-    model.add(Dropout(0.5))  # Reduced dropout
+    model.add(Dropout(0.2))  # Reduced dropout
     model.add(Dense(64, activation='relu'))
-    model.add(Dropout(0.5))  # Reduced dropout
+    model.add(Dropout(0.2))  # Reduced dropout
 
     # Output layer for binary classification
     model.add(Dense(1, activation='sigmoid'))
