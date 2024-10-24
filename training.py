@@ -1,51 +1,63 @@
+import tensorflow as tf
 import numpy as np
-import pandas as pd
-import random
-import os
-from preprocessing import preprocess_image
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Conv2D, MaxPooling2D, Flatten, Dense, Dropout
+from loading import load_images_from_csv
+#print("Num GPUs Available: ", len(tf.config.list_physical_devices('GPU')))
 
-def load_and_preprocess_images(csv_path, image_dir):
-    """
-    load image paths and labels from the csv, preprocess the images, and then split them into respective sets
-    
-    Args:
-        csv_path (str): path to the the CSV file
-        image_dir (str): directory where the images are stored
-    
-    Returns:
-        (tuple): arrays of preprocessed images and labels for training, validation, and testing.
-    """
-    # load the CSV file
-    data = pd.read_csv(csv_path)
-    
-    # extract image paths and labels
-    image_paths = data['filename'].apply(lambda x: os.path.join(image_dir, x)).tolist()
-    labels = data['label'].tolist()  # adjust the column name if necessary (e.g., 'age' or 'is_within_10_years')
-    
-    # combine paths and labels and shuffle together for random splitting
-    combined = list(zip(image_paths, labels))
-    random.shuffle(combined)
-    image_paths, labels = zip(*combined)
-    
-    # calculate the split sizes
-    total_size = len(image_paths)
-    training_size = int(total_size * 0.65)
-    validation_size = int(total_size * 0.20)
-    testing_size = total_size - training_size - validation_size  # Ensuring all images are used
+# load the training images and labels (set a limit for testing purposes)
+train_images, train_boneage, train_gender = load_images_from_csv(
+    'data/boneage-training-dataset.csv', 
+    'data/boneage-training-dataset/boneage-training-dataset', 
+    limit=5000
+)
 
-    # split into training, validation, and testing sets
-    train_images = [preprocess_image(path) for path in image_paths[:training_size]]
-    train_labels = labels[:training_size]
-    
-    val_images = [preprocess_image(path) for path in image_paths[training_size:training_size + validation_size]]
-    val_labels = labels[training_size:training_size + validation_size]
-    
-    test_images = [preprocess_image(path) for path in image_paths[training_size + validation_size:]]
-    test_labels = labels[training_size + validation_size:]
+# define the CNN model
+def create_model(input_shape):
+    model = Sequential()
 
-    # convert images to numpy arrays for TensorFlow compatibility
-    train_images = np.array([np.array(img) for img in train_images])
-    val_images = np.array([np.array(img) for img in val_images])
-    test_images = np.array([np.array(img) for img in test_images])
+    # first convolutional layer
+    model.add(Conv2D(64, kernel_size=(3, 3), activation='relu', input_shape=input_shape))
+    model.add(MaxPooling2D(pool_size=(2, 2)))
 
-    return (train_images, train_labels), (val_images, val_labels), (test_images, test_labels)
+    # second convolutional layer
+    model.add(Conv2D(128, kernel_size=(3, 3), activation='relu'))
+    model.add(MaxPooling2D(pool_size=(2, 2)))
+
+    # third convolutional layer
+    model.add(Conv2D(256, kernel_size=(3, 3), activation='relu'))
+    model.add(MaxPooling2D(pool_size=(2, 2)))
+
+    # fourth convolutional layer (added for more complexity)
+    model.add(Conv2D(512, kernel_size=(3, 3), activation='relu'))
+    model.add(MaxPooling2D(pool_size=(2, 2)))
+
+    # flatten the output from the convolutional layers
+    model.add(Flatten())
+
+    # fully connected layers
+    model.add(Dense(256, activation='relu'))
+    model.add(Dropout(0.5))  # Dropout to prevent overfitting
+    model.add(Dense(128, activation='relu'))
+    model.add(Dropout(0.5))  # Dropout to prevent overfitting
+
+    # output layer (binary classification: 0 or 1)
+    model.add(Dense(1, activation='sigmoid'))
+
+    # compile the model
+    optimizer = tf.keras.optimizers.Adam(learning_rate=0.0001)
+    model.compile(optimizer=optimizer, loss='binary_crossentropy', metrics=['accuracy'])
+    
+    return model
+
+# set input shape for the model
+input_shape = (256, 256, 1) 
+
+# create the model
+model = create_model(input_shape)
+
+# summary of the model architecture
+model.summary()
+
+# train the model
+model.fit(train_images, train_gender, epochs=5, batch_size=32, validation_split=0.2)
