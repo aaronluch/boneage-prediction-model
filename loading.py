@@ -51,17 +51,18 @@ from preprocessing import preprocess_image
 
 #     return (train_images, train_labels), (val_images, val_labels), (test_images, test_labels)
 
-def load_images_from_csv(csv_path, image_dir, limit=None):
+def load_images_from_csv(csv_path, image_dir, threshold=100, limit=None):
     """
-    load image paths and labels from the CSV and preprocess images.
+    Load image paths and create binary labels based on bone age threshold.
     
     Args:
         csv_path (str): Path to the CSV file (for train or test).
         image_dir (str): Directory where the images are stored.
+        threshold (int): Bone age threshold for binary classification.
         limit (int): Number of images to load (for testing purposes).
     
     Returns:
-        (tuple): Numpy arrays of preprocessed images and their corresponding labels.
+        (tuple): Numpy arrays of preprocessed images and their corresponding binary labels.
     """
     # load the CSV
     data = pd.read_csv(csv_path)
@@ -69,14 +70,12 @@ def load_images_from_csv(csv_path, image_dir, limit=None):
     # extract image paths based on 'id' column
     image_paths = data['id'].apply(lambda x: os.path.join(image_dir, f"{x}.png")).tolist()
     
-    # extract labels: bone age and gender
-    boneage_labels = np.array(data['boneage'].tolist())
-    gender_labels = np.array(data['male'].apply(lambda x: 1 if x else 0).tolist())  # 1 for male, 0 for female
+    # create binary labels based on the bone age threshold
+    boneage_labels = np.array(data['boneage'].apply(lambda x: 1 if x > threshold else 0).tolist())
 
     if limit is not None:
         image_paths = image_paths[:limit]
         boneage_labels = boneage_labels[:limit]
-        gender_labels = gender_labels[:limit]
     
     # preprocess images
     preprocessed_images = [preprocess_image(image_path) for image_path in image_paths]
@@ -84,4 +83,4 @@ def load_images_from_csv(csv_path, image_dir, limit=None):
     # convert to NumPy arrays for TensorFlow compatibility
     preprocessed_images = np.array([np.array(img) for img in preprocessed_images])
     
-    return preprocessed_images, boneage_labels, gender_labels
+    return preprocessed_images, boneage_labels

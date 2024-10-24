@@ -5,7 +5,7 @@ import tensorflow as tf
 
 # load an image from the file path
 def load_image(image_path):
-    image = Image.open(image_path)
+    image = Image.open(image_path).convert('L')
     return image
 
 # resize the image to the target size
@@ -20,44 +20,39 @@ def normalize_image(image):
 # augmenting (important) and converting the image to a tensor for TensorFlow
 def augment_image(image):
     datagen = ImageDataGenerator(
-        rotation_range=10,
-        width_shift_range=0.1,
-        height_shift_range=0.1,
-        brightness_range=[0.8,1.2],
-        zoom_range=0.1,
-        #fill_mode='nearest',
+        rotation_range=180,
+        width_shift_range=0.2,
+        height_shift_range=0.2,
+        brightness_range=[0.2,0.5],
+        zoom_range=0.25,
+        fill_mode='nearest',
         horizontal_flip=True
     )
 
-    # convert PIL image to np array and add batch dimension
+    # Convert PIL image to numpy array and add channel dimension (grayscale)
     image_array = np.array(image)
-
-    # add channel dimension (grayscale)
     image_array = np.expand_dims(image_array, axis=-1)
 
-    # add batch dimension (required by datagen)
+    # Add batch dimension (required by datagen)
     image_array = np.expand_dims(image_array, axis=0)
 
-    # generate augmented image
+    # Generate augmented image and squeeze back to 2D
     augmented_image = datagen.flow(image_array, batch_size=1)[0]
-
-    # return to 2d
     augmented_image = augmented_image.squeeze()
 
-    # normalize pixel values [0, 1] range
+    # Normalize pixel values to [0, 1] after augmentation
     augmented_image = augmented_image / 255.0
 
     return augmented_image
 
 # finally, convert the image to a TensorFlow tensor
 def convert_to_tensor(image):
-    return tf.convert_to_tensor(image)
+    return tf.convert_to_tensor(image, dtype=tf.float32)
 
 # encapsulate all the preprocessing steps into one function
-def preprocess_image(image):
-    image = load_image(image)
-    image = resize_image(image)
-    image = normalize_image(image)
-    image = augment_image(image)
-    image = convert_to_tensor(image)
+def preprocess_image(image_path):
+    image = load_image(image_path)       # Load and convert to grayscale
+    image = resize_image(image)          # Resize to target dimensions
+    image = augment_image(image)         # Augment the image
+    image = convert_to_tensor(image)     # Convert to TensorFlow tensor
     return image
