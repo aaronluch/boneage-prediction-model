@@ -1,12 +1,15 @@
 import tensorflow as tf
 import numpy as np
 import pandas as pd
+import pickle
+import os
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Conv2D, MaxPooling2D, Flatten, Dense, Dropout, LeakyReLU, BatchNormalization, GlobalAveragePooling2D
 from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
 from tensorflow.keras.regularizers import l2
 from tensorflow.keras.optimizers import Adam
 from sklearn.model_selection import train_test_split
+from sklearn.metrics import confusion_matrix
 from matplotlib import pyplot as plt
 from loading import load_images_from_csv
 
@@ -81,6 +84,27 @@ def create_model(input_shape):
 
     return model
 
+# function to calculate sensitivty and specificity
+def calculate_sensitivity_specificity(y_true, y_pred, thresholds):
+    sensitivity = []
+    specificity = []
+
+    for threshold in thresholds:
+        y_pred_binary = (y_pred >= threshold).astype(int)
+
+        # calc confusion matrix
+        tn, fp, fn, tp = confusion_matrix(y_true, y_pred_binary).ravel()
+
+        # sensitivity (true positive rate)
+        sens = tp / (tp + fn) if (tp + fn) > 0 else 0
+        sensitivity.append(sens)
+
+        # specificity (true negative rate)
+        spec = tn / (tn + fp) if (tn + fp) > 0 else 0
+        specificity.append(spec)
+    
+    return sensitivity, specificity
+
 # set input shape for the model
 input_shape = (256, 256, 1) 
 
@@ -91,15 +115,14 @@ model = create_model(input_shape)
 model.summary()
 
 # add early stopping to prevent overfitting
-# early_stopping = EarlyStopping(monitor='val_loss', patience=3, restore_best_weights=True, mode='min')
-#callbacks=[early_stopping],
+early_stopping = EarlyStopping(monitor='val_loss', patience=25, restore_best_weights=True, mode='min')
 
 # introduce reduce lr on plateau to adjust learning rate
 reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=5, min_lr=0.00001)
 
 # train the model
 history = model.fit(X_train, y_train, 
-                    epochs=50, batch_size=32, 
+                    epochs=200, batch_size=32, 
                     callbacks=[reduce_lr], 
                     validation_data=(X_val, y_val))
 
@@ -110,38 +133,70 @@ print(f"Test Loss: {test_loss}, Test Accuracy: {test_accuracy}")
 # Predict on the test set
 y_pred_test = model.predict(X_test)
 
+# define thresholds for sensitivity and specificity
+thresholds = np.arange(0, 1.01, 0.01)
+
+# calculate sensitivity and specificity
+sensitivity, specificity = calculate_sensitivity_specificity(y_test, y_pred_test, thresholds)
+
 # Convert the test predictions to binary format (0 or 1)
 y_pred_test_bin = (y_pred_test >= 0.5).astype(int)
 
 # Print the last 50 predictions and actual values for the test set
-test_size = len(y_test)
-startind = max(0, test_size - 50)
-print("\nTest Set Predictions (last 50 samples):")
-for i in range(startind, test_size):
-    print(f"Test Sample {i + 1}: Predicted: {y_pred_test[i][0]}, Actual: {y_test[i]}")
+# test_size = len(y_test)
+# startind = max(0, test_size - 50)
+# print("\nTest Set Predictions (last 50 samples):")
+# for i in range(startind, test_size):
+#     print(f"Test Sample {i + 1}: Predicted: {y_pred_test[i][0]}, Actual: {y_test[i]}")
+
+os.makedirs('model', exist_ok=True)
+
+# save the history object
+with open('model/history200epochsNOED.pkl', 'wb') as file:
+    pickle.dump(history.history, file)
+
+# save test predictions
+with open('model/test_predictions200epochsNOED.pkl', 'wb') as file:
+    pickle.dump(y_pred_test, file)
+
+# save model with keras' save function
+model.save('model/boneage_model200epochsNOED.h5')
 
 # Plot training & validation loss values
-plt.figure(figsize=(12, 5))
+plt.figure(figsize=(16, 9))
 
 # Plot loss
-plt.subplot(1, 2, 1)
+plt.subplot(2, 2, 1)
 plt.plot(history.history['loss'], label='Train Loss')
 plt.plot(history.history['val_loss'], label='Validation Loss')
 plt.title('Model Loss Over Epochs')
 plt.xlabel('Epoch')
 plt.ylabel('Loss')
+plt.yticks(np.arange(0, 1.1, step=0.1))
 plt.ylim(0,1)
 plt.legend(loc='upper right')
 
 # Plot accuracy
-plt.subplot(1, 2, 2)
+plt.subplot(2, 2, 2)
 plt.plot(history.history['accuracy'], label='Train Accuracy')
 plt.plot(history.history['val_accuracy'], label='Validation Accuracy')
 plt.title('Model Accuracy Over Epochs')
 plt.xlabel('Epoch')
 plt.ylabel('Accuracy')
+plt.yticks(np.arange(0, 1.1, step=0.1))
 plt.ylim(0,1)
 plt.legend(loc='lower right')
+
+# Plot sensitivity and specificity
+plt.subplot(2, 2, 3)
+plt.plot(thresholds, sensitivity, label='Sensitivity (True Positive Rate)', color='blue')
+plt.plot(thresholds, specificity, label='Specificity (True Negative Rate)', color='green')
+plt.title('Sensitivity and Specificity')
+plt.xlabel('Threshold')
+plt.ylabel('Rate')
+plt.yticks(np.arange(0, 1.1, step=0.1))
+plt.legend(loc='best')
+plt.grid(True)
 
 # Show the plots
 plt.tight_layout()
