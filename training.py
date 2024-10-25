@@ -69,7 +69,7 @@ def create_model(input_shape):
     model.add(Dense(1, activation='sigmoid'))
 
     # Optimizer
-    optimizer = Adam(learning_rate=0.0001)
+    optimizer = Adam(learning_rate=0.00001, decay = .00001)
     model.compile(optimizer=optimizer, loss='binary_crossentropy', metrics=['accuracy'])
 
     return model
@@ -84,10 +84,10 @@ model = create_model(input_shape)
 model.summary()
 
 # add early stopping to prevent overfitting
-early_stopping = EarlyStopping(monitor='val_loss', patience=3, restore_best_weights=True)
+early_stopping = EarlyStopping(monitor='val_loss', patience=3, restore_best_weights=True, mode='min')
 
 # train the model
-history = model.fit(X_train, y_train, epochs=10, batch_size=32, callbacks=[early_stopping], validation_data=(X_val, y_val))
+history = model.fit(X_train, y_train, epochs=50, batch_size=32, callbacks=[early_stopping], validation_data=(X_val, y_val))
 
 # evaluate the model
 y_pred_val = model.predict(X_val)
