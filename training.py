@@ -93,7 +93,7 @@ def calculate_sensitivity_specificity(y_true, y_pred, thresholds):
         y_pred_binary = (y_pred >= threshold).astype(int)
 
         # calc confusion matrix
-        tn, fp, fn, tp = confusion_matrix(y_true, y_pred_binary).ravel()
+        tn, fp, fn, tp = confusion_matrix(y_true, y_pred_binary, labels=[0,1]).ravel()
 
         # sensitivity (true positive rate)
         sens = tp / (tp + fn) if (tp + fn) > 0 else 0
@@ -122,13 +122,17 @@ reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=5, min_lr
 
 # train the model
 history = model.fit(X_train, y_train, 
-                    epochs=200, batch_size=32, 
-                    callbacks=[reduce_lr], 
+                    epochs=100, batch_size=32, 
+                    callbacks=[reduce_lr, early_stopping], 
                     validation_data=(X_val, y_val))
 
 # Evaluate the model on the test set (final evaluation after training)
 test_loss, test_accuracy = model.evaluate(X_test, y_test)
 print(f"Test Loss: {test_loss}, Test Accuracy: {test_accuracy}")
+
+# add test loss and accuracy to the history object
+history.history['test_loss'] = test_loss * np.ones(len(history.history['loss']))
+history.history['test_accuracy'] = test_accuracy * np.ones(len(history.history['accuracy']))
 
 # Predict on the test set
 y_pred_test = model.predict(X_test)
@@ -139,28 +143,18 @@ thresholds = np.arange(0, 1.01, 0.01)
 # calculate sensitivity and specificity
 sensitivity, specificity = calculate_sensitivity_specificity(y_test, y_pred_test, thresholds)
 
-# Convert the test predictions to binary format (0 or 1)
-y_pred_test_bin = (y_pred_test >= 0.5).astype(int)
-
-# Print the last 50 predictions and actual values for the test set
-# test_size = len(y_test)
-# startind = max(0, test_size - 50)
-# print("\nTest Set Predictions (last 50 samples):")
-# for i in range(startind, test_size):
-#     print(f"Test Sample {i + 1}: Predicted: {y_pred_test[i][0]}, Actual: {y_test[i]}")
-
 os.makedirs('model', exist_ok=True)
 
-# save the history object
-with open('model/history200epochsNOED.pkl', 'wb') as file:
-    pickle.dump(history.history, file)
+# # save the history object
+# with open('model/history200epochsNOED.pkl', 'wb') as file:
+#     pickle.dump(history.history, file)
 
-# save test predictions
-with open('model/test_predictions200epochsNOED.pkl', 'wb') as file:
-    pickle.dump(y_pred_test, file)
+# # save test predictions
+# with open('model/test_predictions200epochsNOED.pkl', 'wb') as file:
+#     pickle.dump(y_pred_test, file)
 
-# save model with keras' save function
-model.save('model/boneage_model200epochsNOED.h5')
+# # save model with keras' save function
+# model.save('model/boneage_model200epochsNOED.h5')
 
 # Plot training & validation loss values
 plt.figure(figsize=(16, 9))
@@ -169,6 +163,7 @@ plt.figure(figsize=(16, 9))
 plt.subplot(2, 2, 1)
 plt.plot(history.history['loss'], label='Train Loss')
 plt.plot(history.history['val_loss'], label='Validation Loss')
+plt.plot(history.history['test_loss'], label='Test Loss', linestyle='dashed', color='lime')
 plt.title('Model Loss Over Epochs')
 plt.xlabel('Epoch')
 plt.ylabel('Loss')
@@ -180,6 +175,7 @@ plt.legend(loc='upper right')
 plt.subplot(2, 2, 2)
 plt.plot(history.history['accuracy'], label='Train Accuracy')
 plt.plot(history.history['val_accuracy'], label='Validation Accuracy')
+plt.plot(history.history['test_accuracy'], label='Test Accuracy', linestyle='dashed', color='lime')
 plt.title('Model Accuracy Over Epochs')
 plt.xlabel('Epoch')
 plt.ylabel('Accuracy')
