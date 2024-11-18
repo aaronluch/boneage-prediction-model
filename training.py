@@ -3,7 +3,7 @@ import numpy as np
 import pandas as pd
 import pickle
 import os
-from tensorflow.keras.applications import VGG16
+from tensorflow.keras.applications import MobileNetV2
 from tensorflow.keras.models import Sequential, Model
 from tensorflow.keras.layers import Conv2D, MaxPooling2D, Flatten, Dense, Dropout, LeakyReLU, BatchNormalization, GlobalAveragePooling2D, Input
 from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
@@ -13,48 +13,42 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import confusion_matrix
 from matplotlib import pyplot as plt
 from loading import load_images_from_csv
-from datagenerator import data_generator
 
-print("start")
+# load the training images and labels (set a limit for testing purposes)
+df = pd.read_csv('data/boneage-training-dataset.csv')
 
-# params
-csv_path = 'data/boneage-training-dataset.csv'
-image_dir = 'data/boneage-training-dataset/boneage-training-dataset'
-batch_size = 16
-threshold = 100
+boneage_threshold = 100 # threshold (months) as decision boundary for binary classification
+limit = len(df['id'])
+print ("set limit")
 
-# load and shuffle the data
-data = pd.read_csv(csv_path).sample(frac=1, random_state=42)
+# Load the training images and labels with the determined limit
+train_images, train_labels = load_images_from_csv(
+    'data/boneage-training-dataset.csv', 
+    'data/boneage-training-dataset/boneage-training-dataset', 
+    threshold=boneage_threshold, limit=limit
+)
+print("loaded images")
 
-limit = len(data)
-print(limit)
+# convert images to rgb for vgg16
+train_images = np.expand_dims(train_images, axis=-1)  # Add channel dimension for grayscale
+train_images_tensor = tf.convert_to_tensor(train_images, dtype=tf.float32)
+X_train = tf.image.grayscale_to_rgb(train_images_tensor).numpy()
+y_train = train_labels
+print("converted images to rgb")
 
-# apply limit if specified
-if limit is not None:
-    data = data.head(limit)
+# setup train and test as X and y
+# X_train = train_images
+# y_train = train_labels
 
-# split the data into training, validation, and test sets
-train_size = int(0.6 * len(data))
-val_size = int(0.2 * len(data))
-test_size = len(data) - train_size - val_size
+# split the dataset into training and validation sets (60% train, 40% val)
+X_train, X_val, y_train, y_val = train_test_split(np.array(X_train), y_train, test_size=0.4, random_state=42, shuffle=True)
 
-# assign the data to the respective sets
-train_data = data.iloc[:train_size]
-val_data = data.iloc[train_size:train_size + val_size]
-test_data = data.iloc[train_size + val_size:]
-
-# Create data generators for training, validation, and testing
-train_generator = data_generator(train_data, image_dir, batch_size=batch_size, threshold=threshold)
-val_generator = data_generator(val_data, image_dir, batch_size=batch_size, threshold=threshold)
-test_generator = data_generator(test_data, image_dir, batch_size=batch_size, threshold=threshold)
-
-# calculate the number of steps per epoch for training and validation
-steps_per_epoch_train = len(train_data) // batch_size
-steps_per_epoch_val = len(val_data) // batch_size
-steps_per_epoch_test = len(test_data) // batch_size
+# Further split the validation data into validation and test sets (50% of the validation set for testing)
+X_val, X_test, y_val, y_test = train_test_split(X_val, y_val, test_size=0.5, random_state=42, shuffle=True)
+print("split data")
 
 # set input shape for the model
-input_shape = (224, 224, 3) # 3 channels for VGG16 compatibility
+input_shape = (128, 128, 3) # 3 channels for MobileNetV2 compatibility
 
 print("loaded images")
 
@@ -66,10 +60,13 @@ print("loaded images")
 print("about to create model")
 # define the CNN model
 def create_model(input_shape):
-    # load base VGG16 model
-    base_model = VGG16(weights='imagenet', include_top=False, input_shape=input_shape)
+    # load base MobileNetV2 model
+    base_model = MobileNetV2(weights='imagenet', include_top=False, input_shape=input_shape)
+    for layer in base_model.layers[:-10]:  # Freeze all but the last 20 layers
+        layer.trainable = False
 
-    # create new model with sequential and VGG16 base
+
+    # create new model with sequential and MobileNetV2 base
     model = Sequential()
     model.add(base_model)
 
@@ -77,6 +74,8 @@ def create_model(input_shape):
 
     # pool and flatten the output before the fully connected layers
     model.add(GlobalAveragePooling2D())
+
+    model.add(Dropout(0.5))
 
     # Output layer for binary classification
     model.add(Dense(1, activation='sigmoid'))
@@ -121,35 +120,21 @@ early_stopping = EarlyStopping(monitor='val_loss', patience=25, restore_best_wei
 reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=5, min_lr=0.00001)
 
 # train the model
-history = model.fit(
-    train_generator,
-    steps_per_epoch=steps_per_epoch_train,
-    epochs=50,
-    callbacks=[reduce_lr, early_stopping],
-    validation_data=val_generator,
-    validation_steps=steps_per_epoch_val
-)
+history = model.fit(X_train, y_train, 
+                    epochs=20, batch_size=8, 
+                    callbacks=[reduce_lr, early_stopping], 
+                    validation_data=(X_val, y_val))
 
 # Evaluate the model on the test set (final evaluation after training)
-test_loss, test_accuracy = model.evaluate(test_generator, steps=steps_per_epoch_test)
+test_loss, test_accuracy = model.evaluate(X_test, y_test)
 print(f"Test Loss: {test_loss}, Test Accuracy: {test_accuracy}")
 
-# Add test loss and accuracy to the history object
+# add test loss and accuracy to the history object
 history.history['test_loss'] = test_loss * np.ones(len(history.history['loss']))
 history.history['test_accuracy'] = test_accuracy * np.ones(len(history.history['accuracy']))
 
-# Predict on the test set using the generator
-y_pred_test = model.predict(test_generator, steps=steps_per_epoch_test)
-
-# Gather true labels for the test set
-# We need to manually gather these because we are using a generator
-y_test = []
-for _, labels in test_generator:
-    y_test.extend(labels)
-    if len(y_test) >= test_size:  # Ensure we only collect as many as there are in the test set
-        y_test = y_test[:test_size]
-        break
-y_test = np.array(y_test)
+# Predict on the test set
+y_pred_test = model.predict(X_test)
 
 # Define thresholds for sensitivity and specificity
 thresholds = np.arange(0, 1.01, 0.01)
