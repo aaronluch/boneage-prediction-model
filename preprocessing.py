@@ -9,7 +9,7 @@ def load_image(image_path):
     return image
 
 # resize the image to the target size
-def resize_image(image, target_size=(256,256)):
+def resize_image(image, target_size=(224,224)):
     return image.resize(target_size)
 
 # normalize the image pixel values
