@@ -3,8 +3,9 @@ import numpy as np
 import pandas as pd
 import pickle
 import os
+from tensorflow.keras.applications import VGG16
 from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Conv2D, MaxPooling2D, Flatten, Dense, Dropout, LeakyReLU, BatchNormalization, GlobalAveragePooling2D
+from tensorflow.keras.layers import Conv2D, MaxPooling2D, Flatten, Dense, Dropout, LeakyReLU, BatchNormalization, GlobalAveragePooling2D, Input
 from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
 from tensorflow.keras.regularizers import l2
 from tensorflow.keras.optimizers import Adam
@@ -13,11 +14,14 @@ from sklearn.metrics import confusion_matrix
 from matplotlib import pyplot as plt
 from loading import load_images_from_csv
 
+print("start")
+
 # load the training images and labels (set a limit for testing purposes)
 df = pd.read_csv('data/boneage-training-dataset.csv')
 
 boneage_threshold = 100 # threshold (months) as decision boundary for binary classification
-limit = len(df['id'])
+limit = 4000#len(df['id'])
+print ("set limit")
 
 # Load the training images and labels with the determined limit
 train_images, train_labels = load_images_from_csv(
@@ -25,46 +29,46 @@ train_images, train_labels = load_images_from_csv(
     'data/boneage-training-dataset/boneage-training-dataset', 
     threshold=boneage_threshold, limit=limit
 )
+print("loaded images")
+
+# convert images to rgb for vgg16
+train_images = np.expand_dims(train_images, axis=-1)  # Add channel dimension for grayscale
+train_images_tensor = tf.convert_to_tensor(train_images, dtype=tf.float32)
+X_train = tf.image.grayscale_to_rgb(train_images_tensor).numpy()
+y_train = train_labels
+print("converted images to rgb")
 
 # setup train and test as X and y
-X_train = train_images
-y_train = train_labels
+# X_train = train_images
+# y_train = train_labels
 
-# First, split the dataset into training and validation sets (60% train, 40% val)
-X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.4, random_state=42, shuffle=True)
+# split the dataset into training and validation sets (60% train, 40% val)
+X_train, X_val, y_train, y_val = train_test_split(np.array(X_train), y_train, test_size=0.4, random_state=42, shuffle=True)
 
 # Further split the validation data into validation and test sets (50% of the validation set for testing)
 X_val, X_test, y_val, y_test = train_test_split(X_val, y_val, test_size=0.5, random_state=42, shuffle=True)
+print("split data")
 
 # the data is split as follows:
 # - X_train, y_train: 60% of the data
 # - X_val, y_val: 20% of the data (validation set)
 # - X_test, y_test: 20% of the data (test set)
 
+print("about to create model")
 # define the CNN model
 def create_model(input_shape):
+    # load base vgg16 model
+    base_model = VGG16(weights='imagenet', include_top=False, input_shape=input_shape)
+
+    # freeze base layers
+    for layer in base_model.layers:
+        layer.trainable = False
+
+    # create new model with sequential and vgg16 base
     model = Sequential()
+    model.add(base_model)
 
-    model.add(Conv2D(32, (3, 3), strides=(2, 2), input_shape=input_shape))
-    model.add(BatchNormalization())
-    model.add(LeakyReLU(alpha=0.1))
-
-    model.add(Conv2D(64, (3, 3), strides=(1, 1)))
-    model.add(BatchNormalization())
-    model.add(LeakyReLU(alpha=0.1))
-
-    model.add(Conv2D(128, kernel_size=(3, 3)))
-    model.add(BatchNormalization())
-    model.add(LeakyReLU(alpha=0.1))
-    model.add(MaxPooling2D(pool_size=(2, 2))) # downsample the output
-
-    model.add(Conv2D(16, kernel_size=(3, 3))) # reduce the number of filters after downsampling
-    model.add(BatchNormalization())
-    model.add(LeakyReLU(alpha=0.1))
-
-    model.add(Conv2D(512, kernel_size=(3, 3))) # increase the number of filters again
-    model.add(BatchNormalization())
-    model.add(LeakyReLU(alpha=0.1))
+    # due to hardware constraints, we're just going to purely use the base model
 
     # pool and flatten the output before the fully connected layers
     model.add(GlobalAveragePooling2D())
@@ -72,7 +76,7 @@ def create_model(input_shape):
     # fully connected layers with regularization
     # model.add(Dense(128, activation='relu'))
     # model.add(Dropout(0.3))
-    model.add(Dense(64, activation='relu'))
+    model.add(Dense(32, activation='relu'))
     model.add(Dropout(0.3))
 
     # Output layer for binary classification
@@ -106,7 +110,7 @@ def calculate_sensitivity_specificity(y_true, y_pred, thresholds):
     return sensitivity, specificity
 
 # set input shape for the model
-input_shape = (256, 256, 1) 
+input_shape = (256, 256, 3) # 3 channels for vgg16 compatibility
 
 # create the model
 model = create_model(input_shape)
@@ -122,7 +126,7 @@ reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=5, min_lr
 
 # train the model
 history = model.fit(X_train, y_train, 
-                    epochs=100, batch_size=32, 
+                    epochs=20, batch_size=16, 
                     callbacks=[reduce_lr, early_stopping], 
                     validation_data=(X_val, y_val))
 
