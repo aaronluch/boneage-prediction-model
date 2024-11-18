@@ -20,7 +20,7 @@ print("start")
 df = pd.read_csv('data/boneage-training-dataset.csv')
 
 boneage_threshold = 100 # threshold (months) as decision boundary for binary classification
-limit = 4000#len(df['id'])
+limit = len(df['id'])
 print ("set limit")
 
 # Load the training images and labels with the determined limit
@@ -31,7 +31,7 @@ train_images, train_labels = load_images_from_csv(
 )
 print("loaded images")
 
-# convert images to rgb for vgg16
+# convert images to rgb for VGG16
 train_images = np.expand_dims(train_images, axis=-1)  # Add channel dimension for grayscale
 train_images_tensor = tf.convert_to_tensor(train_images, dtype=tf.float32)
 X_train = tf.image.grayscale_to_rgb(train_images_tensor).numpy()
@@ -57,14 +57,14 @@ print("split data")
 print("about to create model")
 # define the CNN model
 def create_model(input_shape):
-    # load base vgg16 model
+    # load base VGG16 model
     base_model = VGG16(weights='imagenet', include_top=False, input_shape=input_shape)
 
     # freeze base layers
     for layer in base_model.layers:
         layer.trainable = False
 
-    # create new model with sequential and vgg16 base
+    # create new model with sequential and VGG16 base
     model = Sequential()
     model.add(base_model)
 
@@ -110,7 +110,7 @@ def calculate_sensitivity_specificity(y_true, y_pred, thresholds):
     return sensitivity, specificity
 
 # set input shape for the model
-input_shape = (256, 256, 3) # 3 channels for vgg16 compatibility
+input_shape = (128, 128, 3) # 3 channels for VGG16 compatibility
 
 # create the model
 model = create_model(input_shape)
@@ -126,7 +126,7 @@ reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=5, min_lr
 
 # train the model
 history = model.fit(X_train, y_train, 
-                    epochs=20, batch_size=16, 
+                    epochs=50, batch_size=8, 
                     callbacks=[reduce_lr, early_stopping], 
                     validation_data=(X_val, y_val))
 
