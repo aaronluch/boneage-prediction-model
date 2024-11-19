@@ -62,9 +62,6 @@ print("about to create model")
 def create_model(input_shape):
     # load base MobileNetV2 model
     base_model = MobileNetV2(weights='imagenet', include_top=False, input_shape=input_shape)
-    for layer in base_model.layers[:-10]:  # Freeze all but the last 20 layers
-        layer.trainable = False
-
 
     # create new model with sequential and MobileNetV2 base
     model = Sequential()
@@ -78,7 +75,7 @@ def create_model(input_shape):
     model.add(Dropout(0.5))
 
     # Output layer for binary classification
-    model.add(Dense(1, activation='sigmoid'))
+    model.add(Dense(1, activation='sigmoid', kernel_regularizer=l2(0.01)))
 
     # Optimizer and compile the model
     optimizer = Adam(learning_rate=0.001)
@@ -121,7 +118,7 @@ reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=5, min_lr
 
 # train the model
 history = model.fit(X_train, y_train, 
-                    epochs=20, batch_size=8, 
+                    epochs=50, batch_size=8, 
                     callbacks=[reduce_lr, early_stopping], 
                     validation_data=(X_val, y_val))
 
