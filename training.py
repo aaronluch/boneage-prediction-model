@@ -2,14 +2,15 @@ import tensorflow as tf
 import numpy as np
 import pandas as pd
 import os
-from tensorflow.keras.applications import MobileNetV2
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Dense, Dropout, GlobalAveragePooling2D, BatchNormalization
+from tensorflow.keras.models import Sequential, Model
+from tensorflow.keras.layers import Dense, Dropout, GlobalAveragePooling2D, BatchNormalization,Conv2D, MaxPooling2D
 from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
 from tensorflow.keras.regularizers import l2
 from tensorflow.keras.optimizers import Adam
 from matplotlib import pyplot as plt
 from loading import load_images_from_csv
+from sklearn.metrics import roc_auc_score, roc_curve, confusion_matrix, f1_score
+from keyboardinterrupt import KeyboardInterruptCallback
 
 # Enable memory growth for the GPU to avoid full allocation at the beginning
 physical_devices = tf.config.list_physical_devices('GPU')
@@ -46,11 +47,44 @@ test_dataset = shuffled_dataset.skip(train_count + val_count)
 input_shape = (224, 224, 3)
 
 def create_model(input_shape):
-    base_model = MobileNetV2(input_shape=input_shape)
-
     model = Sequential([
-        base_model,
-        Dense(1, activation='sigmoid')
+        # conv block 1
+        Conv2D(32, (3, 3), activation='relu', input_shape=input_shape),
+        BatchNormalization(),
+        Conv2D(32, (3, 3), activation='relu'),
+        BatchNormalization(),
+        MaxPooling2D((2, 2)),
+        Dropout(0.25),
+
+        # conv block 2
+        Conv2D(64, (3, 3), activation='relu'),
+        BatchNormalization(),
+        Conv2D(64, (3, 3), activation='relu'),
+        BatchNormalization(),
+        MaxPooling2D((2, 2)),
+        Dropout(0.25),
+
+        # conv block 3
+        Conv2D(128, (3, 3), activation='relu'),
+        BatchNormalization(),
+        Conv2D(128, (3, 3), activation='relu'),
+        BatchNormalization(),
+        MaxPooling2D((2, 2)),
+        Dropout(0.4),
+
+        # conv block 4
+        Conv2D(256, (3, 3), activation='relu'),
+        BatchNormalization(),
+        Conv2D(256, (3, 3), activation='relu'),
+        BatchNormalization(),
+        MaxPooling2D((2, 2)),
+        Dropout(0.5),
+
+        # fully connected layers
+        GlobalAveragePooling2D(),
+        Dense(256, activation='relu'),
+        Dropout(0.5),
+        Dense(1, activation='sigmoid', kernel_regularizer=l2(0.01))
     ])
 
     # Compile the model with mixed precision policy
@@ -61,26 +95,30 @@ def create_model(input_shape):
 
 # Create the model
 model = create_model(input_shape)
-
 # Summary of the model architecture
 model.summary()
-
-# Early stopping and learning rate scheduling callbacks
-early_stopping = EarlyStopping(monitor='val_loss', patience=25, restore_best_weights=True, mode='min')
+# Callbacks
+early_stopping = EarlyStopping(monitor='val_loss', patience=20, restore_best_weights=True, mode='min')
 reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=10, min_lr=0.00001)
+keyboard_interrupt = KeyboardInterruptCallback()
 
 # Train the model using the `tf.data` datasets
 history = model.fit(
     train_dataset,
     validation_data=val_dataset,
-    epochs=400,
+    epochs=200,
     batch_size=batch_size,
-    callbacks=[reduce_lr, early_stopping]
+    callbacks=[reduce_lr, early_stopping, keyboard_interrupt]
 )
 
 # Evaluate the model on the test set
 test_loss, test_accuracy = model.evaluate(test_dataset)
 print(f"Test Loss: {test_loss}, Test Accuracy: {test_accuracy}")
+history.history['test_loss'] = test_loss * np.ones(len(history.history['loss']))
+history.history['test_accuracy'] = test_accuracy * np.ones(len(history.history['accuracy']))
+
+# Save the model
+#model.save('model/model.h5')
 
 # Collect predictions and true labels from the test dataset
 y_true_test = []
@@ -96,55 +134,108 @@ y_pred_test = np.array(y_pred_test)
 y_true_test = np.array(y_true_test)
 y_pred_binary = (y_pred_test >= 0.5).astype(int)
 
-# Calculate sensitivity and specificity using confusion_matrix
-from sklearn.metrics import confusion_matrix
+# Compute ROC curve
+fpr, tpr, thresholds = roc_curve(y_true_test, y_pred_test)
 
-thresholds = np.arange(0, 1.01, 0.01)
+# calculate sensitivity and specificity
+sensitivity = []
+specificity = []
+# Iterate through thresholds to calculate sensitivity (TPR) and specificity (TNR) to understand how the model balances positive and negative predictions at each threshold
+for threshold in thresholds:
+# The threshold is the cutoff point on a test score that determines the classification of a sample as positive or negative
+    y_pred_binary = (y_pred_test >= threshold).astype(int)
+    tn, fp, fn, tp = confusion_matrix(y_true_test, y_pred_binary).ravel()
+    
+    sens = tp / (tp + fn) if (tp + fn) > 0 else 0  # Sensitivity
+    spec = tn / (tn + fp) if (tn + fp) > 0 else 0  # Specificity
+    
+    sensitivity.append(sens)
+    specificity.append(spec)
 
-# def calculate_sensitivity_specificity(y_true, y_pred, thresholds):
-#     sensitivity = []
-#     specificity = []
+# Convert predictions to binary values (0 or 1) based on a threshold of 0.5
+y_pred_test = np.array(y_pred_test)
+y_true_test = np.array(y_true_test)
+y_pred_binary = (y_pred_test >= 0.5).astype(int)
 
-#     for threshold in thresholds:
-#         y_pred_binary = (y_pred >= threshold).astype(int)
+# Calculate F1 score
+f1 = f1_score(y_true_test, y_pred_binary)
+print(f"F1 Score: {f1}")
+# Calculate AUC-ROC
+auc_score = roc_auc_score(y_true_test, y_pred_test)
+print(f"AUC-ROC Score: {auc_score}")
+# plot ROC curve
+plt.figure(figsize=(8, 6))
+plt.plot(fpr, tpr, label=f"ROC Curve (AUC = {auc_score:.2f})")
+plt.plot([0, 1], [0, 1], linestyle='--', color='gray')
+plt.text(0.6, 0.2, f"F1 Score = {f1:.2f}", fontsize=12, bbox=dict(facecolor='white', alpha=0.8))
+plt.xlabel("False Positive Rate")
+plt.ylabel("True Positive Rate (Sensitivity)")
+plt.title("ROC Curve")
+plt.legend()
 
-#         # Calculate confusion matrix
-#         tn, fp, fn, tp = confusion_matrix(y_true, y_pred_binary, labels=[0, 1]).ravel()
+# confusion matrix
+cm = confusion_matrix(y_true_test, y_pred_binary)
+tn, fp, fn, tp = cm.ravel()
+# Create a 2x2 grid for the confusion matrix
+conf_matrix = np.array([[tn, fp],
+                        [fn, tp]])
 
-#         # Sensitivity (true positive rate)
-#         sens = tp / (tp + fn) if (tp + fn) > 0 else 0
-#         sensitivity.append(sens)
+fig, ax = plt.subplots(figsize=(6, 6))
+im = ax.imshow(conf_matrix, cmap='Blues', interpolation='nearest')
 
-#         # Specificity (true negative rate)
-#         spec = tn / (tn + fp) if (tn + fp) > 0 else 0
-#         specificity.append(spec)
+# Add titles and labels
+ax.set_title("Confusion Matrix", fontsize=16)
+ax.set_xlabel("Predicted Labels", fontsize=14)
+ax.set_ylabel("True Labels", fontsize=14)
+ax.set_xticks([0, 1])
+ax.set_yticks([0, 1])
+ax.set_xticklabels(["Negative", "Positive"])
+ax.set_yticklabels(["Negative", "Positive"])
 
-#     return sensitivity, specificity
+# Add text annotations
+for i in range(2):
+    for j in range(2):
+        ax.text(j, i, f"{conf_matrix[i, j]}",
+                ha="center", va="center", color="black", fontsize=12)
 
-# # Calculate sensitivity and specificity
-# sensitivity, specificity = calculate_sensitivity_specificity(y_true_test, y_pred_test, thresholds)
+# Add color bar for reference
+plt.colorbar(im, ax=ax)
 
+# Plot Sensitivity vs. Specificity
+plt.figure(figsize=(8, 6))
+plt.plot(thresholds, sensitivity, label='Sensitivity (True Positive Rate)', color='blue')
+plt.plot(thresholds, specificity, label='Specificity (True Negative Rate)', color='green')
+plt.title('Sensitivity and Specificity')
+plt.xlabel('Threshold')
+plt.ylabel('Rate')
+plt.yticks(np.arange(0, 1.1, step=0.1))
+plt.legend(loc='best')
+plt.grid(True)
 
 # Plot training, validation, and test results
-plt.figure(figsize=(16, 9))
-
+plt.figure(figsize=(18, 9))
 # Plot loss
 plt.subplot(2, 2, 1)
 plt.plot(history.history['loss'], label='Train Loss')
 plt.plot(history.history['val_loss'], label='Validation Loss')
+plt.plot(history.history['test_loss'], label='Test Loss', linestyle='dashed', color='lime')
 plt.title('Model Loss Over Epochs')
 plt.xlabel('Epoch')
 plt.ylabel('Loss')
+plt.yticks(np.arange(0, 1.1, step=0.1))
+plt.ylim(0,1)
 plt.legend(loc='upper right')
 
 # Plot accuracy
 plt.subplot(2, 2, 2)
 plt.plot(history.history['accuracy'], label='Train Accuracy')
 plt.plot(history.history['val_accuracy'], label='Validation Accuracy')
-plt.axhline(y=test_accuracy, color='green', linestyle='--', label='Test Accuracy')  # Dotted green line for test accuracy
+plt.plot(history.history['test_accuracy'], label='Test Accuracy', linestyle='dashed', color='lime')
 plt.title('Model Accuracy Over Epochs')
 plt.xlabel('Epoch')
 plt.ylabel('Accuracy')
+plt.yticks(np.arange(0, 1.1, step=0.1))
+plt.ylim(0,1)
 plt.legend(loc='lower right')
 
 # Show the plots
