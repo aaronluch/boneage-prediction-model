@@ -4,9 +4,13 @@ import pandas as pd
 import os
 from tensorflow.keras.models import Sequential, Model
 from tensorflow.keras.layers import Dense, Dropout, GlobalAveragePooling2D, BatchNormalization,Conv2D, MaxPooling2D
+from tensorflow.keras.applications import MobileNetV2, VGG16
 from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
 from tensorflow.keras.regularizers import l2
 from tensorflow.keras.optimizers import Adam
+from sklearn.svm import SVC
+from sklearn.preprocessing import StandardScaler
+from sklearn.pipeline import make_pipeline
 from matplotlib import pyplot as plt
 from loading import load_images_from_csv
 from sklearn.metrics import roc_auc_score, roc_curve, confusion_matrix, f1_score
@@ -23,7 +27,7 @@ dataset = load_images_from_csv(
     csv_path='data/boneage-training-dataset.csv',
     image_dir='data/boneage-training-dataset/boneage-training-dataset',
     threshold=100,
-    limit=None,  # Load the entire dataset
+    limit=500,#None,  # Load the entire dataset
     batch_size=batch_size
 )
 
@@ -93,151 +97,185 @@ def create_model(input_shape):
     
     return model
 
+# using the model to extract features for transfer learning
+def extract_features(dataset, model):
+    features = []
+    labels = []
+    for images, labels_batch in dataset:
+        features_batch = model.predict(images, verbose=1)
+        features.append(features_batch)
+        labels.extend(labels_batch.numpy())
+    
+    features = np.vstack(features)
+    labels = np.array(labels)
+    return features, labels
+
 # Create the model
-model = create_model(input_shape)
+#model = create_model(input_shape)
+model = MobileNetV2(include_top=False, weights='imagenet', input_shape=input_shape)
+# Extract features for training, validation, and test datasets
+train_features, train_labels = extract_features(train_dataset, model)
+val_features, val_labels = extract_features(val_dataset, model)
+test_features, test_labels = extract_features(test_dataset, model)
+# flatten the features
+train_features = train_features.reshape(train_features.shape[0], -1)
+val_features = val_features.reshape(val_features.shape[0], -1)
+test_features = test_features.reshape(test_features.shape[0], -1)
+
+# svm pipeline
+svm_model = make_pipeline(StandardScaler(), SVC(kernel='linear', probability=True))
+svm_model.fit(train_features, train_labels)
+
+val_accuracy = svm_model.score(val_features, val_labels)
+print(f"Validation Accuracy: {val_accuracy}")
+test_accuracy = svm_model.score(test_features, test_labels)
+print(f"Test Accuracy: {test_accuracy}")
+test_preds = svm_model.predict(test_features)
+print(test_preds)
+
 # Summary of the model architecture
-model.summary()
-# Callbacks
-early_stopping = EarlyStopping(monitor='val_loss', patience=20, restore_best_weights=True, mode='min')
-reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=10, min_lr=0.00001)
-keyboard_interrupt = KeyboardInterruptCallback()
+# model.summary()
+# # Callbacks
+# early_stopping = EarlyStopping(monitor='val_loss', patience=20, restore_best_weights=True, mode='min')
+# reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=10, min_lr=0.00001)
+# keyboard_interrupt = KeyboardInterruptCallback()
 
-# Train the model using the `tf.data` datasets
-history = model.fit(
-    train_dataset,
-    validation_data=val_dataset,
-    epochs=200,
-    batch_size=batch_size,
-    callbacks=[reduce_lr, early_stopping, keyboard_interrupt]
-)
+# # Train the model using the `tf.data` datasets
+# history = model.fit(
+#     train_dataset,
+#     validation_data=val_dataset,
+#     epochs=200,
+#     batch_size=batch_size,
+#     callbacks=[reduce_lr, early_stopping, keyboard_interrupt]
+# )
 
-# Evaluate the model on the test set
-test_loss, test_accuracy = model.evaluate(test_dataset)
-print(f"Test Loss: {test_loss}, Test Accuracy: {test_accuracy}")
-history.history['test_loss'] = test_loss * np.ones(len(history.history['loss']))
-history.history['test_accuracy'] = test_accuracy * np.ones(len(history.history['accuracy']))
+# # Evaluate the model on the test set
+# test_loss, test_accuracy = model.evaluate(test_dataset)
+# print(f"Test Loss: {test_loss}, Test Accuracy: {test_accuracy}")
+# history.history['test_loss'] = test_loss * np.ones(len(history.history['loss']))
+# history.history['test_accuracy'] = test_accuracy * np.ones(len(history.history['accuracy']))
 
-# Save the model
-#model.save('model/model.h5')
+# # Save the model
+# model.save('model/transfer_learning_model_adlucian.h5')
 
-# Collect predictions and true labels from the test dataset
-y_true_test = []
-y_pred_test = []
+# # Collect predictions and true labels from the test dataset
+# y_true_test = []
+# y_pred_test = []
 
-for image_batch, label_batch in test_dataset:
-    predictions = model.predict(image_batch)
-    y_pred_test.extend(predictions)
-    y_true_test.extend(label_batch.numpy())
+# for image_batch, label_batch in test_dataset:
+#     predictions = model.predict(image_batch)
+#     y_pred_test.extend(predictions)
+#     y_true_test.extend(label_batch.numpy())
 
-# Convert predictions to binary values (0 or 1) based on a threshold of 0.5
-y_pred_test = np.array(y_pred_test)
-y_true_test = np.array(y_true_test)
-y_pred_binary = (y_pred_test >= 0.5).astype(int)
+# # Convert predictions to binary values (0 or 1) based on a threshold of 0.5
+# y_pred_test = np.array(y_pred_test)
+# y_true_test = np.array(y_true_test)
+# y_pred_binary = (y_pred_test >= 0.5).astype(int)
 
-# Compute ROC curve
-fpr, tpr, thresholds = roc_curve(y_true_test, y_pred_test)
+# # Compute ROC curve
+# fpr, tpr, thresholds = roc_curve(y_true_test, y_pred_test)
 
-# calculate sensitivity and specificity
-sensitivity = []
-specificity = []
-# Iterate through thresholds to calculate sensitivity (TPR) and specificity (TNR) to understand how the model balances positive and negative predictions at each threshold
-for threshold in thresholds:
-# The threshold is the cutoff point on a test score that determines the classification of a sample as positive or negative
-    y_pred_binary = (y_pred_test >= threshold).astype(int)
-    tn, fp, fn, tp = confusion_matrix(y_true_test, y_pred_binary).ravel()
+# # calculate sensitivity and specificity
+# sensitivity = []
+# specificity = []
+# # Iterate through thresholds to calculate sensitivity (TPR) and specificity (TNR) to understand how the model balances positive and negative predictions at each threshold
+# for threshold in thresholds:
+# # The threshold is the cutoff point on a test score that determines the classification of a sample as positive or negative
+#     y_pred_binary = (y_pred_test >= threshold).astype(int)
+#     tn, fp, fn, tp = confusion_matrix(y_true_test, y_pred_binary).ravel()
     
-    sens = tp / (tp + fn) if (tp + fn) > 0 else 0  # Sensitivity
-    spec = tn / (tn + fp) if (tn + fp) > 0 else 0  # Specificity
+#     sens = tp / (tp + fn) if (tp + fn) > 0 else 0  # Sensitivity
+#     spec = tn / (tn + fp) if (tn + fp) > 0 else 0  # Specificity
     
-    sensitivity.append(sens)
-    specificity.append(spec)
+#     sensitivity.append(sens)
+#     specificity.append(spec)
 
-# Convert predictions to binary values (0 or 1) based on a threshold of 0.5
-y_pred_test = np.array(y_pred_test)
-y_true_test = np.array(y_true_test)
-y_pred_binary = (y_pred_test >= 0.5).astype(int)
+# # Convert predictions to binary values (0 or 1) based on a threshold of 0.5
+# y_pred_test = np.array(y_pred_test)
+# y_true_test = np.array(y_true_test)
+# y_pred_binary = (y_pred_test >= 0.5).astype(int)
 
-# Calculate F1 score
-f1 = f1_score(y_true_test, y_pred_binary)
-print(f"F1 Score: {f1}")
-# Calculate AUC-ROC
-auc_score = roc_auc_score(y_true_test, y_pred_test)
-print(f"AUC-ROC Score: {auc_score}")
-# plot ROC curve
-plt.figure(figsize=(8, 6))
-plt.plot(fpr, tpr, label=f"ROC Curve (AUC = {auc_score:.2f})")
-plt.plot([0, 1], [0, 1], linestyle='--', color='gray')
-plt.text(0.6, 0.2, f"F1 Score = {f1:.2f}", fontsize=12, bbox=dict(facecolor='white', alpha=0.8))
-plt.xlabel("False Positive Rate")
-plt.ylabel("True Positive Rate (Sensitivity)")
-plt.title("ROC Curve")
-plt.legend()
+# # Calculate F1 score
+# f1 = f1_score(y_true_test, y_pred_binary)
+# print(f"F1 Score: {f1}")
+# # Calculate AUC-ROC
+# auc_score = roc_auc_score(y_true_test, y_pred_test)
+# print(f"AUC-ROC Score: {auc_score}")
+# # plot ROC curve
+# plt.figure(figsize=(8, 6))
+# plt.plot(fpr, tpr, label=f"ROC Curve (AUC = {auc_score:.2f})")
+# plt.plot([0, 1], [0, 1], linestyle='--', color='gray')
+# plt.text(0.6, 0.2, f"F1 Score = {f1:.2f}", fontsize=12, bbox=dict(facecolor='white', alpha=0.8))
+# plt.xlabel("False Positive Rate")
+# plt.ylabel("True Positive Rate (Sensitivity)")
+# plt.title("ROC Curve")
+# plt.legend()
 
-# confusion matrix
-cm = confusion_matrix(y_true_test, y_pred_binary)
-tn, fp, fn, tp = cm.ravel()
-# Create a 2x2 grid for the confusion matrix
-conf_matrix = np.array([[tn, fp],
-                        [fn, tp]])
+# # confusion matrix
+# cm = confusion_matrix(y_true_test, y_pred_binary)
+# tn, fp, fn, tp = cm.ravel()
+# # Create a 2x2 grid for the confusion matrix
+# conf_matrix = np.array([[tn, fp],
+#                         [fn, tp]])
 
-fig, ax = plt.subplots(figsize=(6, 6))
-im = ax.imshow(conf_matrix, cmap='Blues', interpolation='nearest')
+# fig, ax = plt.subplots(figsize=(6, 6))
+# im = ax.imshow(conf_matrix, cmap='Blues', interpolation='nearest')
 
-# Add titles and labels
-ax.set_title("Confusion Matrix", fontsize=16)
-ax.set_xlabel("Predicted Labels", fontsize=14)
-ax.set_ylabel("True Labels", fontsize=14)
-ax.set_xticks([0, 1])
-ax.set_yticks([0, 1])
-ax.set_xticklabels(["Negative", "Positive"])
-ax.set_yticklabels(["Negative", "Positive"])
+# # Add titles and labels
+# ax.set_title("Confusion Matrix", fontsize=16)
+# ax.set_xlabel("Predicted Labels", fontsize=14)
+# ax.set_ylabel("True Labels", fontsize=14)
+# ax.set_xticks([0, 1])
+# ax.set_yticks([0, 1])
+# ax.set_xticklabels(["Negative", "Positive"])
+# ax.set_yticklabels(["Negative", "Positive"])
 
-# Add text annotations
-for i in range(2):
-    for j in range(2):
-        ax.text(j, i, f"{conf_matrix[i, j]}",
-                ha="center", va="center", color="black", fontsize=12)
+# # Add text annotations
+# for i in range(2):
+#     for j in range(2):
+#         ax.text(j, i, f"{conf_matrix[i, j]}",
+#                 ha="center", va="center", color="black", fontsize=12)
 
-# Add color bar for reference
-plt.colorbar(im, ax=ax)
+# # Add color bar for reference
+# plt.colorbar(im, ax=ax)
 
-# Plot Sensitivity vs. Specificity
-plt.figure(figsize=(8, 6))
-plt.plot(thresholds, sensitivity, label='Sensitivity (True Positive Rate)', color='blue')
-plt.plot(thresholds, specificity, label='Specificity (True Negative Rate)', color='green')
-plt.title('Sensitivity and Specificity')
-plt.xlabel('Threshold')
-plt.ylabel('Rate')
-plt.yticks(np.arange(0, 1.1, step=0.1))
-plt.legend(loc='best')
-plt.grid(True)
+# # Plot Sensitivity vs. Specificity
+# plt.figure(figsize=(8, 6))
+# plt.plot(thresholds, sensitivity, label='Sensitivity (True Positive Rate)', color='blue')
+# plt.plot(thresholds, specificity, label='Specificity (True Negative Rate)', color='green')
+# plt.title('Sensitivity and Specificity')
+# plt.xlabel('Threshold')
+# plt.ylabel('Rate')
+# plt.yticks(np.arange(0, 1.1, step=0.1))
+# plt.legend(loc='best')
+# plt.grid(True)
 
-# Plot training, validation, and test results
-plt.figure(figsize=(18, 9))
-# Plot loss
-plt.subplot(2, 2, 1)
-plt.plot(history.history['loss'], label='Train Loss')
-plt.plot(history.history['val_loss'], label='Validation Loss')
-plt.plot(history.history['test_loss'], label='Test Loss', linestyle='dashed', color='lime')
-plt.title('Model Loss Over Epochs')
-plt.xlabel('Epoch')
-plt.ylabel('Loss')
-plt.yticks(np.arange(0, 1.1, step=0.1))
-plt.ylim(0,1)
-plt.legend(loc='upper right')
+# # Plot training, validation, and test results
+# plt.figure(figsize=(18, 9))
+# # Plot loss
+# plt.subplot(2, 2, 1)
+# plt.plot(history.history['loss'], label='Train Loss')
+# plt.plot(history.history['val_loss'], label='Validation Loss')
+# plt.plot(history.history['test_loss'], label='Test Loss', linestyle='dashed', color='lime')
+# plt.title('Model Loss Over Epochs')
+# plt.xlabel('Epoch')
+# plt.ylabel('Loss')
+# plt.yticks(np.arange(0, 1.1, step=0.1))
+# plt.ylim(0,1)
+# plt.legend(loc='upper right')
 
-# Plot accuracy
-plt.subplot(2, 2, 2)
-plt.plot(history.history['accuracy'], label='Train Accuracy')
-plt.plot(history.history['val_accuracy'], label='Validation Accuracy')
-plt.plot(history.history['test_accuracy'], label='Test Accuracy', linestyle='dashed', color='lime')
-plt.title('Model Accuracy Over Epochs')
-plt.xlabel('Epoch')
-plt.ylabel('Accuracy')
-plt.yticks(np.arange(0, 1.1, step=0.1))
-plt.ylim(0,1)
-plt.legend(loc='lower right')
+# # Plot accuracy
+# plt.subplot(2, 2, 2)
+# plt.plot(history.history['accuracy'], label='Train Accuracy')
+# plt.plot(history.history['val_accuracy'], label='Validation Accuracy')
+# plt.plot(history.history['test_accuracy'], label='Test Accuracy', linestyle='dashed', color='lime')
+# plt.title('Model Accuracy Over Epochs')
+# plt.xlabel('Epoch')
+# plt.ylabel('Accuracy')
+# plt.yticks(np.arange(0, 1.1, step=0.1))
+# plt.ylim(0,1)
+# plt.legend(loc='lower right')
 
-# Show the plots
-plt.tight_layout()
-plt.show()
+# # Show the plots
+# plt.tight_layout()
+# plt.show()
