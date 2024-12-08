@@ -1,0 +1,9 @@
+Starting SVM Training...
+SVM Test Accuracy: 0.716323296354992
+SVM Training Complete.
+Training Time: 41.32 seconds
+Min Probability: 0.10387305377633597
+Max Probability: 0.9915601262886252
+Optimal Threshold: 0.7461185781349953
+F1 Score: 0.7660606060606061
+AUC-ROC Score: 0.7671299586722472
