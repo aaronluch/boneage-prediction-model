@@ -3,10 +3,11 @@ from loading import load_images_for_sklearn
 from matplotlib import pyplot as plt
 import numpy as np
 from sklearn.svm import SVC
-from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import StandardScaler
 from sklearn.pipeline import make_pipeline
 from sklearn.metrics import accuracy_score, roc_curve, roc_auc_score, confusion_matrix, f1_score
+from sklearn.decomposition import PCA
+import time
 import pickle
 
 # Load training, validation, and test datasets for sklearn models
@@ -20,26 +21,38 @@ X_train, y_train, X_val, y_val, X_test, y_test = load_images_for_sklearn(
     train_size=0.8,
     val_size=0.15,
     test_size=0.05,
-    limit=5000
+    limit=None
 )
+
+# PCA the data
+pca = PCA(n_components=.95, random_state=42)
+X_train_reduced = pca.fit_transform(X_train)
+X_val_reduced = pca.transform(X_val)
+X_test_reduced = pca.transform(X_test)
+
+print("Starting SVM Training...")
+start_time = time.time()
+
 # Train SVM
 svm_model = make_pipeline(StandardScaler(), SVC(probability=True, kernel='linear', class_weight='balanced', C=0.01))
-svm_model.fit(X_train, y_train)
+svm_model.fit(X_train_reduced, y_train)
 
 # save the model
 with open('model/svm_model.pkl', 'wb') as file:
     pickle.dump(svm_model, file)
 
 # Evaluate SVM
-y_pred = svm_model.predict(X_test)
+y_pred = svm_model.predict(X_test_reduced)
 print("SVM Test Accuracy:", accuracy_score(y_test, y_pred))
 
-# graphing stuff
+print("SVM Training Complete.")
+end_time = time.time()
+print(f"Training Time: {end_time - start_time:.2f} seconds")
 
+# graphing stuff
 # Collect predictions and true labels from the test dataset
 y_true_test = y_test  # True labels
-y_pred_test = svm_model.predict_proba(X_test)[:, 1]  # Predicted probabilities for the positive class
-print("Predicted Probabilities (y_pred_test):", y_pred_test)
+y_pred_test = svm_model.predict_proba(X_test_reduced)[:, 1]  # Predicted probabilities for the positive class
 print("Min Probability:", np.min(y_pred_test))
 print("Max Probability:", np.max(y_pred_test))
 
@@ -52,7 +65,6 @@ optimal_threshold = thresholds[optimal_idx]
 print(f"Optimal Threshold: {optimal_threshold}")
 y_pred_binary = (y_pred_test >= optimal_threshold).astype(int)
 # print("Binary Predictions:", y_pred_binary)
-print("Unique values in Binary Predictions:", np.unique(y_pred_binary))
 
 # F1 Score
 f1 = f1_score(y_true_test, y_pred_binary)
@@ -103,11 +115,3 @@ plt.colorbar(im, ax=ax)
 
 # Show all plots
 plt.show()
-
-# # Train Random Forest
-# rf_model = RandomForestClassifier(n_estimators=100, random_state=42)
-# rf_model.fit(X_train, y_train)
-
-# # Evaluate Random Forest
-# y_pred_rf = rf_model.predict(X_test)
-# print("Random Forest Test Accuracy:", accuracy_score(y_test, y_pred_rf))
