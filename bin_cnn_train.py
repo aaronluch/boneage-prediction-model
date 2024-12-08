@@ -121,7 +121,7 @@ history.history['test_loss'] = test_loss * np.ones(len(history.history['loss']))
 history.history['test_accuracy'] = test_accuracy * np.ones(len(history.history['accuracy']))
 
 # Save the model
-model.save('model/transfer_learning_model_adlucian.h5')
+model.save('model/bin_cnn_model_adlucian.h5')
 
 # Collect predictions and true labels from the test dataset
 y_true_test = []
