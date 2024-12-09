@@ -1,0 +1,4 @@
+MAE: 9.55
+MSE: 147.48
+
+mae = on avg, around 9.55 months away from actual
