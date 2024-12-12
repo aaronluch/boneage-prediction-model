@@ -36,7 +36,7 @@ We developed and evaluated various models, including custom convolutional neural
   - You can also replace MobileNetV2 with any accepted models from `tensorflow.keras.applications`
 
 ## Repository Contents
-- `~`: Contains scripts for all models and scripts.
+- `~`: Contains scripts for all models and additional functions.
 - `output/`: Associated images and text files for results from the specified model directories inside.
 - `model/`: Pretrained and saved models for reproducibility.
 
