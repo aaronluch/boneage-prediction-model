@@ -1,3 +1,7 @@
+"""
+This script trains a Random Forest model on the Bone Age dataset using the scikit-learn library.
+It performs hyperparameter tuning using GridSearchCV and evaluates the model on the validation and test sets.
+"""
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score, confusion_matrix, roc_auc_score, roc_curve, f1_score
 from sklearn.model_selection import GridSearchCV
@@ -121,7 +125,6 @@ ax.set_yticks([0, 1])
 ax.set_xticklabels(["Negative", "Positive"])
 ax.set_yticklabels(["Negative", "Positive"])
 
-# Add text annotations
 for i in range(2):
     for j in range(2):
         ax.text(j, i, f"{conf_matrix[i, j]}",
