@@ -38,6 +38,7 @@ We developed and evaluated various models, including custom convolutional neural
 ## Repository Contents
 - `~`: Contains scripts for all models and additional functions.
 - `output/`: Associated images and text files for results from the specified model directories inside.
+- `data/`: Contains associated CSV with metadata for images. Images must be sources from the original dataset; not available on GitHub.
 - `model/`: Pretrained and saved models for reproducibility.
 
 ## Reproducibility
