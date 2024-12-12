@@ -1,74 +1,91 @@
 """
-This script trains a Support Vector Machine (SVM) model on the bone age dataset using the scikit-learn library.
-It evaluates the model on the test set and generates an ROC curve, confusion matrix, F1 score, and AUC-ROC score.
-Utilizes PCA for dimensionality reduction and hyperparameter tuning for the SVM model.
+This script trains a Random Forest model on the Bone Age dataset using the scikit-learn library.
+It performs hyperparameter tuning using GridSearchCV and evaluates the model on the validation and test sets.
 """
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import accuracy_score, confusion_matrix, roc_auc_score, roc_curve, f1_score
+from sklearn.model_selection import GridSearchCV
 from loading import load_images_for_sklearn
 from matplotlib import pyplot as plt
-import numpy as np
-from sklearn.svm import SVC
-from sklearn.preprocessing import StandardScaler
-from sklearn.pipeline import make_pipeline
-from sklearn.metrics import accuracy_score, roc_curve, roc_auc_score, confusion_matrix, f1_score
 from sklearn.decomposition import PCA
 import time
-import pickle
+import numpy as np
 
-# Load training, validation, and test datasets for sklearn models
-train_csv = 'data/boneage-training-dataset.csv'
+csv_path = 'data/boneage-training-dataset.csv'
 image_dir = 'data/boneage-training-dataset/boneage-training-dataset'
-# split the data
+
 X_train, y_train, X_val, y_val, X_test, y_test = load_images_for_sklearn(
-    csv_path='data/boneage-training-dataset.csv',
-    image_dir='data/boneage-training-dataset/boneage-training-dataset',
+    csv_path=csv_path,
+    image_dir=image_dir,
     threshold=100,
+    img_size=(224, 224),
     train_size=0.8,
     val_size=0.15,
     test_size=0.05,
-    limit=None
+    limit=None # Load the full dataset or set a limit for testing
 )
 
-# PCA the data
+# Define parameter grid
+param_grid = {
+    'n_estimators': [50, 100, 200],
+    'max_depth': [10, 20, None],
+    'min_samples_split': [2, 5, 10],
+    'min_samples_leaf': [1, 2, 4],
+    'max_features': ['sqrt', 'log2']
+}
+
+# start a timer to measure training time
+start_time = time.time()
+print("Training Random Forest...")
+
+# pca the data
 pca = PCA(n_components=.95, random_state=42)
 X_train_reduced = pca.fit_transform(X_train)
 X_val_reduced = pca.transform(X_val)
 X_test_reduced = pca.transform(X_test)
 
-print("Starting SVM Training...")
-start_time = time.time()
+# Initialize the Random Forest model
+rf = RandomForestClassifier(random_state=42)
 
-# Train SVM
-svm_model = make_pipeline(StandardScaler(), SVC(probability=True, kernel='linear', class_weight='balanced', C=0.01))
-svm_model.fit(X_train_reduced, y_train)
+# Perform grid search
+grid_search = GridSearchCV(estimator=rf, param_grid=param_grid, cv=3, scoring='accuracy', verbose=2, n_jobs=-1)
+rf_model = grid_search
+rf_model.fit(X_train_reduced, y_train)
 
-# save the model - Commented out to avoid overwriting
-# with open('model/svm_model.pkl', 'wb') as file:
-#     pickle.dump(svm_model, file)
+# Get the best parameters and score
+print("Best Parameters:", grid_search.best_params_)
+print("Best Score:", grid_search.best_score_)
 
-# Evaluate SVM
-y_pred = svm_model.predict(X_test_reduced)
-print("SVM Test Accuracy:", accuracy_score(y_test, y_pred))
-
-print("SVM Training Complete.")
+# end the timer
 end_time = time.time()
-print(f"Training Time: {end_time - start_time:.2f} seconds")
+print(f"Complete. Training Time: {end_time - start_time:.2f} seconds")
 
-# graphing stuff
+# Predict on the validation set
+y_val_pred = rf_model.predict(X_val_reduced)
+val_accuracy = accuracy_score(y_val, y_val_pred)
+print(f"Validation Accuracy: {val_accuracy}")
+
+# Evaluate the model on the test set
+y_test_pred = rf_model.predict(X_test_reduced)
+test_accuracy = accuracy_score(y_test, y_test_pred)
+print(f"Test Accuracy: {test_accuracy}")
+
 # Collect predictions and true labels from the test dataset
 y_true_test = y_test  # True labels
-y_pred_test = svm_model.predict_proba(X_test_reduced)[:, 1]  # Predicted probabilities for the positive class
-print("Min Probability:", np.min(y_pred_test))
-print("Max Probability:", np.max(y_pred_test))
+y_pred_test = rf_model.predict_proba(X_test_reduced)[:, 1]  # Predicted probabilities for the positive class
+print("Predicted Probabilities (y_pred_test):", y_pred_test[-20:])
 
 # Compute ROC curve
 fpr, tpr, thresholds = roc_curve(y_true_test, y_pred_test)
 
-# Convert predictions to binary values
+# Determine the optimal threshold
 optimal_idx = np.argmax(tpr - fpr)
 optimal_threshold = thresholds[optimal_idx]
 print(f"Optimal Threshold: {optimal_threshold}")
+
+# Convert probabilities to binary predictions using the optimal threshold
 y_pred_binary = (y_pred_test >= optimal_threshold).astype(int)
-# print("Binary Predictions:", y_pred_binary)
+print("Unique values in Binary Predictions:", np.unique(y_pred_binary))
 
 # F1 Score
 f1 = f1_score(y_true_test, y_pred_binary)
@@ -115,6 +132,4 @@ for i in range(2):
 
 # Add color bar for reference
 plt.colorbar(im, ax=ax)
-
-# Show all plots
 plt.show()

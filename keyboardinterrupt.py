@@ -1,3 +1,9 @@
+"""
+Helper scipt to stop training when 'Enter' key is pressed.
+
+Can be passed into the callbacks list of Keras model.
+"""
+
 import tensorflow as tf
 import threading
 

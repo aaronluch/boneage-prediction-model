@@ -1,8 +1,14 @@
-# CNN linear reg model training script with TensorFlow
+"""
+lin_cnn_train.py
+
+This script is used to train a Convolutional Neural Network (CNN) for linear regression of bone age from X-ray images.
+The model predicts the bone age of a person from an X-ray image of their hand, in months.
+"""
 import tensorflow as tf
 import numpy as np
 import pandas as pd
 import os
+import random
 from tensorflow.keras.models import Sequential, Model
 from tensorflow.keras.layers import Dense, Dropout, GlobalAveragePooling2D, BatchNormalization,Conv2D, MaxPooling2D
 from tensorflow.keras.applications import MobileNetV2, VGG16
@@ -11,7 +17,6 @@ from tensorflow.keras.regularizers import l2
 from tensorflow.keras.optimizers import Adam
 from matplotlib import pyplot as plt
 from loading import load_images_for_regression
-from sklearn.metrics import roc_auc_score, roc_curve, confusion_matrix, f1_score
 from keyboardinterrupt import KeyboardInterruptCallback
 
 # Enable memory growth for the GPU to avoid full allocation at the beginning
@@ -93,7 +98,15 @@ def create_model(input_shape):
     
     return model
 
-# test using mobilenetv2
+# Create the model
+model = create_model(input_shape)
+
+"""
+If you're looking to use a pre-trained model like VGG16 or MobileNetV2, you can use the following
+function to create the model instead of the custom CNN model above.
+
+Just replace the model = create_model(input_shape) line with model = mobilenet_model(input_shape) or model = vgg16_model(input_shape).
+# using mobilenetv2
 def mobilenet_model(input_shape):
     base_model = MobileNetV2(input_shape=input_shape, include_top=False, weights='imagenet')
     base_model.trainable = False
@@ -109,9 +122,10 @@ def mobilenet_model(input_shape):
 
     return model
 
-# model = create_model(input_shape)
 
 model = mobilenet_model(input_shape)
+"""
+
 model.summary()
 
 # Callbacks
@@ -132,8 +146,8 @@ history = model.fit(
 test_loss, test_accuracy = model.evaluate(test_dataset)
 print(f"Test Loss: {test_loss}, Test Accuracy: {test_accuracy}")
 
-# Save the model
-model.save('model/mobilenetV2_lin_cnn_model_adlucian.h5')
+# Save the model - commented out to avoid overwriting the model
+# model.save('model/mobilenetV2_lin_cnn_model_adlucian.h5')
 
 # Collect predictions and true labels from the test dataset
 y_true_test = []
@@ -143,6 +157,37 @@ for image_batch, label_batch in test_dataset:
     predictions = model.predict(image_batch)
     y_pred_test.extend(predictions.flatten())  # Flatten to 1D array
     y_true_test.extend(label_batch.numpy())
+
+def display_random_predictions(test_dataset, model, num_samples=5):
+    images = []
+    true_labels = []
+    pred_labels = []
+    
+    # Collect images and their predictions
+    for image_batch, label_batch in test_dataset:
+        predictions = model.predict(image_batch)
+        images.extend(image_batch.numpy())
+        true_labels.extend(label_batch.numpy())
+        pred_labels.extend(predictions)
+    
+    # Randomly select num_samples
+    selected_indices = random.sample(range(len(images)), num_samples)
+    selected_images = [images[i] for i in selected_indices]
+    selected_true_labels = [true_labels[i] for i in selected_indices]
+    selected_pred_labels = [pred_labels[i] for i in selected_indices]
+    
+    # Plot the images with predictions and true labels
+    plt.figure(figsize=(15, 10))
+    for i in range(num_samples):
+        plt.subplot(1, num_samples, i + 1)
+        plt.imshow(selected_images[i])
+        plt.axis('off')
+        plt.title(f"True: {selected_true_labels[i]}\nPred: {selected_pred_labels[i][0]:.2f}")
+    plt.tight_layout()
+    plt.show()
+
+# Call the function
+display_random_predictions(test_dataset, model, num_samples=5)
 
 # Convert predictions and true labels to numpy arrays
 y_pred_test = np.array(y_pred_test)
@@ -166,8 +211,8 @@ plt.grid(True)
 
 # Plot training and validation loss over epochs
 plt.figure(figsize=(8, 6))
-plt.plot(history.history['loss'], label='Train Loss')
-plt.plot(history.history['val_loss'], label='Validation Loss')
+# plt.plot(history.history['loss'], label='Train Loss')
+# plt.plot(history.history['val_loss'], label='Validation Loss')
 plt.title('Model Loss Over Epochs')
 plt.xlabel('Epoch')
 plt.ylabel('Loss (MSE)')

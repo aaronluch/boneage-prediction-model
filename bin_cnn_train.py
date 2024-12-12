@@ -1,8 +1,14 @@
-# CNN model training script with TensorFlow
+"""
+bin_cnn_train.py
+
+This script is used to train a Convolutional Neural Network (CNN) for binary classification of bone age from X-ray images.
+The model predicts whether the bone age is above or below a certain threshold (e.g., 100 months).
+"""
 import tensorflow as tf
 import numpy as np
 import pandas as pd
 import os
+import random
 from tensorflow.keras.models import Sequential, Model
 from tensorflow.keras.layers import Dense, Dropout, GlobalAveragePooling2D, BatchNormalization,Conv2D, MaxPooling2D
 from tensorflow.keras.applications import MobileNetV2, VGG16
@@ -98,6 +104,32 @@ def create_model(input_shape):
 # Create the model
 model = create_model(input_shape)
 
+
+"""
+If you're looking to use a pre-trained model like VGG16 or MobileNetV2, you can use the following
+function to create the model instead of the custom CNN model above.
+
+Just replace the model = create_model(input_shape) line with model = mobilenet_model(input_shape) or model = vgg16_model(input_shape).
+
+#use mobilenet base model to train on
+def mobilenet_model(input_shape):
+    base_model = MobileNetV2(input_shape=input_shape, include_top=False, weights='imagenet')
+    base_model.trainable = False
+
+    model = Sequential([
+        base_model,
+        GlobalAveragePooling2D(),
+        Dense(1, activation='sigmoid')
+    ])
+
+    optimizer = Adam(learning_rate=0.001)
+    model.compile(optimizer=optimizer, loss='binary_crossentropy', metrics=['accuracy'])
+
+    return model
+
+model = mobilenet_model(input_shape)
+"""
+
 # Summary of the model architecture
 model.summary()
 # Callbacks
@@ -120,8 +152,8 @@ print(f"Test Loss: {test_loss}, Test Accuracy: {test_accuracy}")
 history.history['test_loss'] = test_loss * np.ones(len(history.history['loss']))
 history.history['test_accuracy'] = test_accuracy * np.ones(len(history.history['accuracy']))
 
-# Save the model
-model.save('model/bin_cnn_model_adlucian.h5')
+# Save the model - Commented out to avoid overwriting the model
+# model.save('model/mobilenetV2_bin_cnn_model_adlucian.h5')
 
 # Collect predictions and true labels from the test dataset
 y_true_test = []
@@ -140,7 +172,7 @@ y_pred_binary = (y_pred_test >= 0.5).astype(int)
 # Compute ROC curve
 fpr, tpr, thresholds = roc_curve(y_true_test, y_pred_test)
 
-# calculate sensitivity and specificity
+# Calculate sensitivity and specificity
 sensitivity = []
 specificity = []
 # Iterate through thresholds to calculate sensitivity (TPR) and specificity (TNR) to understand how the model balances positive and negative predictions at each threshold
@@ -159,6 +191,38 @@ for threshold in thresholds:
 y_pred_test = np.array(y_pred_test)
 y_true_test = np.array(y_true_test)
 y_pred_binary = (y_pred_test >= 0.5).astype(int)
+
+# Function to print 5 random predictions of the model and true label on top of the image
+def display_random_predictions(test_dataset, model, num_samples=5):
+    images = []
+    true_labels = []
+    pred_labels = []
+    
+    # Collect images and their predictions
+    for image_batch, label_batch in test_dataset:
+        predictions = model.predict(image_batch)
+        images.extend(image_batch.numpy())
+        true_labels.extend(label_batch.numpy())
+        pred_labels.extend(predictions)
+    
+    # Randomly select num_samples
+    selected_indices = random.sample(range(len(images)), num_samples)
+    selected_images = [images[i] for i in selected_indices]
+    selected_true_labels = [true_labels[i] for i in selected_indices]
+    selected_pred_labels = [pred_labels[i] for i in selected_indices]
+    
+    # Plot the images with predictions and true labels
+    plt.figure(figsize=(15, 10))
+    for i in range(num_samples):
+        plt.subplot(1, num_samples, i + 1)
+        plt.imshow(selected_images[i])
+        plt.axis('off')
+        plt.title(f"True: {selected_true_labels[i]}\nPred: {selected_pred_labels[i][0]:.2f}")
+    plt.tight_layout()
+    plt.show()
+
+# Call the function
+display_random_predictions(test_dataset, model, num_samples=5)
 
 # Calculate F1 score
 f1 = f1_score(y_true_test, y_pred_binary)
@@ -195,7 +259,6 @@ ax.set_yticks([0, 1])
 ax.set_xticklabels(["Negative", "Positive"])
 ax.set_yticklabels(["Negative", "Positive"])
 
-# Add text annotations
 for i in range(2):
     for j in range(2):
         ax.text(j, i, f"{conf_matrix[i, j]}",
